@@ -1,0 +1,81 @@
+import { describe, expect, it } from 'vitest'
+import { matchRule, normaliseMerchant } from './match.ts'
+import { rupees } from './money.ts'
+import { parseSms, redactSms, smsFingerprint } from './sms.ts'
+
+describe('parseSms', () => {
+  it('reads a UPI debit', () => {
+    expect(
+      parseSms('Sent Rs.450.00 From HDFC Bank A/C *1234 To SWIGGY On 12/10/26 Ref 628712345678 Not You? Call 18002586161'),
+    ).toEqual({
+      kind: 'transaction',
+      amount: rupees(450),
+      direction: 'debit',
+      merchantRaw: 'SWIGGY',
+      last4: '1234',
+      instrument: 'other',
+    })
+  })
+
+  it('reads a card spend and skips the available limit', () => {
+    const parsed = parseSms('INR 1,249.00 spent using ICICI Bank Card XX9876 on 12-Oct-26 on AMAZON PAY IN. Avl Limit: INR 85,000.00')
+    expect(parsed).toMatchObject({ kind: 'transaction', amount: rupees(1_249), merchantRaw: 'AMAZON PAY IN', last4: '9876', instrument: 'card' })
+  })
+
+  it('reads an amount with no currency label', () => {
+    const parsed = parseSms('Dear UPI user A/C X5678 debited by 2000.0 on date 11Oct26 trf to RAMESH KUMAR Refno 628812345678')
+    expect(parsed).toMatchObject({ kind: 'transaction', amount: rupees(2_000), merchantRaw: 'RAMESH KUMAR', instrument: 'upi' })
+  })
+
+  it('reads a VPA as the merchant', () => {
+    const parsed = parseSms('Rs 280 debited from A/c XX1234 to VPA paytm-4829@ybl on 13-10-26. UPI Ref 123456')
+    expect(parsed).toMatchObject({ amount: rupees(280), merchantRaw: 'paytm-4829@ybl', instrument: 'upi' })
+  })
+
+  it('recognises a credit', () => {
+    expect(parseSms('Rs.50,000.00 credited to A/c XX1234 on 05-10-26 by NEFT from ACME CORP. Avl Bal Rs 62,310.00')).toMatchObject({
+      direction: 'credit',
+      amount: rupees(50_000),
+    })
+  })
+
+  it('recognises a bill notice', () => {
+    expect(parseSms('BESCOM: Bill amount Rs 1,240.00 for Oct-26 is due on 18-10-26.')).toMatchObject({ kind: 'bill', amount: rupees(1_240) })
+  })
+
+  it('ignores OTPs and offers', () => {
+    expect(parseSms('123456 is your OTP for a transaction of Rs 500 at AMAZON. Do not share.').kind).toBe('ignore')
+    expect(parseSms('Congratulations! You are pre-approved for a loan of Rs 5,00,000').kind).toBe('ignore')
+  })
+})
+
+describe('redactSms', () => {
+  it('hides account digits and balances but keeps the amount', () => {
+    expect(redactSms('Rs.500 debited from A/c XX1234. Avl Bal Rs 62,310.00')).toBe('Rs.500 debited from A/c XX••••. Avl Bal [hidden]')
+    expect(redactSms('spent using ICICI Bank Card XX9876. Avl Limit: INR 85,000.00')).toBe(
+      'spent using ICICI Bank Card XX••••. Avl Limit: [hidden]',
+    )
+  })
+})
+
+describe('matching', () => {
+  it('normalises UPI handles and punctuation', () => {
+    expect(normaliseMerchant('SWIGGY@icici')).toBe('swiggy')
+    expect(normaliseMerchant('Bharat-Petroleum ')).toBe('bharat petroleum')
+  })
+
+  it('prefers the most specific rule', () => {
+    const rules = [
+      { id: '1', pattern: 'amazon', bucketId: 'misc' },
+      { id: '2', pattern: 'amazon fresh', bucketId: 'groceries' },
+    ]
+    expect(matchRule(rules, 'AMAZON FRESH IN')?.bucketId).toBe('groceries')
+    expect(matchRule(rules, 'AMAZON PAY')?.bucketId).toBe('misc')
+    expect(matchRule(rules, 'ZOMATO')).toBeNull()
+  })
+
+  it('fingerprints the same message in the same minute identically', () => {
+    expect(smsFingerprint('a', '2026-10-13T10:00:05Z')).toBe(smsFingerprint('a ', '2026-10-13T10:00:59Z'))
+    expect(smsFingerprint('a', '2026-10-13T10:00:05Z')).not.toBe(smsFingerprint('a', '2026-10-13T10:01:00Z'))
+  })
+})
