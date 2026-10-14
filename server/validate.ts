@@ -16,6 +16,7 @@ const TYPES = new Set<CommandBody['type']>([
   'returnToInbox',
   'deleteTransaction',
   'dismissSalary',
+  'splitTransaction',
   'moveMoney',
   'undoMove',
   'addAccount',

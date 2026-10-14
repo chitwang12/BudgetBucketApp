@@ -20,9 +20,10 @@ export function Allocate({ onDone }: { onDone: (message: string) => void }) {
     [state, nextCycle.start],
   )
 
+  const fundable = state.buckets.filter((b) => !b.isReceivable)
   const [startIncome] = useState(() => pendingSalary(state)?.amount ?? (state.cycle.income || rupees(50_000)))
   const [income, setIncome] = useState<Paise>(startIncome)
-  const [lines, setLines] = useState<AllocationLine[]>(() => draftAllocation(startIncome, state.buckets, context))
+  const [lines, setLines] = useState<AllocationLine[]>(() => draftAllocation(startIncome, fundable, context))
   const left = unallocated(income, lines)
   const buffer = state.buckets.find((b) => b.isBuffer)
 
@@ -31,7 +32,7 @@ export function Allocate({ onDone }: { onDone: (message: string) => void }) {
 
   const changeIncome = (value: Paise) => {
     setIncome(value)
-    setLines(draftAllocation(value, state.buckets, context))
+    setLines(draftAllocation(value, fundable, context))
   }
 
   const restToBuffer = () => {
@@ -62,7 +63,7 @@ export function Allocate({ onDone }: { onDone: (message: string) => void }) {
       </div>
 
       {state.groups.map((group) => {
-        const buckets = state.buckets.filter((b) => b.groupId === group.id)
+        const buckets = fundable.filter((b) => b.groupId === group.id)
         if (buckets.length === 0) return null
         return (
           <section key={group.id} className={`group tone--${group.tone}`}>

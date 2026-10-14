@@ -131,6 +131,17 @@ export function viewBucket(state: AppState, bucket: PlannedBucket, today: IsoDat
       }
     }
     case 'surplus':
+      if (bucket.isReceivable) {
+        const owed = Math.max(0, -balance)
+        return {
+          ...base,
+          overspent: false,
+          label: owed > 0 ? 'Owed' : balance > 0 ? 'Extra' : 'Settled',
+          mood: owed > 0 ? 'warn' : 'good',
+          progress: null,
+          detail: owed > 0 ? 'Waiting to be paid back' : balance > 0 ? 'Paid back more than was owed' : 'Nobody owes you',
+        }
+      }
       return {
         ...base,
         label: bucket.isBuffer ? 'Buffer' : 'Saving',
@@ -151,7 +162,7 @@ export function viewGroups(state: AppState, today: IsoDate): GroupView[] {
   return state.groups
     .map((group) => {
       const buckets = state.buckets.filter((b) => b.groupId === group.id).map((b) => viewBucket(state, b, today))
-      return { group, buckets, total: buckets.reduce((sum, b) => sum + b.balance, 0) }
+      return { group, buckets, total: buckets.reduce((sum, b) => sum + (b.bucket.isReceivable ? 0 : b.balance), 0) }
     })
     .filter((g) => g.buckets.length > 0)
 }

@@ -24,6 +24,8 @@ export interface PlannedBucket extends Bucket {
   groupId: string
   matchKeywords: string[]
   cardAccountId: string | null
+  /** "Friends owe me": a negative balance is money others owe, not overspending. */
+  isReceivable?: boolean
 }
 
 export interface Cycle {
@@ -68,6 +70,8 @@ export interface Transaction {
   confidence: number | null
   /** A credit that looks like salary: waits for salary day, then is marked used. */
   salary?: 'pending' | 'used'
+  /** A split bill: only this much is mine; the rest of the amount is owed to me. */
+  myShare?: Paise
 }
 
 export interface Rule {

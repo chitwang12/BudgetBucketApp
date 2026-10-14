@@ -227,11 +227,12 @@ export function merchantStats(state: AppState, cycles: Cycle[], limit = 8): Merc
     if (!cycles.some((c) => date >= c.start && date <= c.end)) continue
     const name = displayMerchant(txn.merchant)
     const stat = totals.get(name) ?? { total: 0, count: 0, buckets: new Map() }
-    stat.total += txn.amount
+    const mine = txn.myShare ?? txn.amount
+    stat.total += mine
     stat.count++
     stat.buckets.set(txn.bucketId, (stat.buckets.get(txn.bucketId) ?? 0) + 1)
     totals.set(name, stat)
-    grand += txn.amount
+    grand += mine
   }
   return [...totals.entries()]
     .map(([name, stat]) => {

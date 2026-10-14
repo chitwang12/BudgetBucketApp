@@ -90,6 +90,7 @@ interface Store {
   returnToInbox: (txnId: string) => void
   deleteTransaction: (txnId: string) => void
   dismissSalary: (txnId: string) => void
+  splitTransaction: (txnId: string, myShare: Paise) => void
   moveMoney: (fromId: string, toId: string, amount: Paise) => void
   undoMove: (moveId: string) => void
   addAccount: (input: NewAccount) => void
@@ -299,6 +300,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       returnToInbox: (txnId) => dispatch({ type: 'returnToInbox', txnId }),
       deleteTransaction: (txnId) => dispatch({ type: 'deleteTransaction', txnId }),
       dismissSalary: (txnId) => dispatch({ type: 'dismissSalary', txnId }),
+      splitTransaction: (txnId, myShare) => dispatch({ type: 'splitTransaction', txnId, myShare }),
       moveMoney: (fromId, toId, amount) => dispatch({ type: 'moveMoney', fromId, toId, amount }),
       undoMove: (moveId) => dispatch({ type: 'undoMove', moveId }),
       addAccount: (input) => dispatch({ type: 'addAccount', input }),

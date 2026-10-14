@@ -75,8 +75,16 @@ export function BucketSheet({ bucketId, onClose }: { bucketId: string; onClose: 
   return (
     <Sheet open onClose={onClose} title={bucket.name}>
       <div className="detail-hero">
-        <Eyebrow>{bucket.type === 'committed' || bucket.type === 'bill' ? 'Reserved now' : bucket.type === 'card' ? 'Reserve' : 'Balance'}</Eyebrow>
-        <Money value={view.balance} className="detail-hero__number" />
+        <Eyebrow>
+          {bucket.isReceivable
+            ? 'Owed to you'
+            : bucket.type === 'committed' || bucket.type === 'bill'
+              ? 'Reserved now'
+              : bucket.type === 'card'
+                ? 'Reserve'
+                : 'Balance'}
+        </Eyebrow>
+        <Money value={bucket.isReceivable ? -view.balance : view.balance} className="detail-hero__number" />
         <div className="detail-hero__row">
           <Pill mood={view.mood}>{view.label}</Pill>
           <span className="muted">{view.detail}</span>
@@ -92,6 +100,26 @@ export function BucketSheet({ bucketId, onClose }: { bucketId: string; onClose: 
           <button className="button button--ink" onClick={() => cover(bucket.id)}>
             Cover from {buffer.name}
           </button>
+        </div>
+      )}
+
+      {bucket.isReceivable && view.balance < 0 && buffer && (
+        <div className="callout callout--owed">
+          <p>
+            Friends owe you <strong>{formatINR(-view.balance)}</strong> from split bills. When they pay you back, the money lands in
+            your Inbox with this bucket already picked.
+          </p>
+          <div className="callout__actions">
+            <button
+              className="button button--ghost button--small"
+              onClick={() => {
+                cover(bucket.id)
+                toast(`Written off from ${buffer.name}`)
+              }}
+            >
+              Write it off from {buffer.name}
+            </button>
+          </div>
         </div>
       )}
 

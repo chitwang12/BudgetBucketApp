@@ -70,6 +70,16 @@ export function bufferBucket(state: AppState): PlannedBucket | undefined {
   return state.buckets.find((b) => b.isBuffer)
 }
 
+export function receivableBucket(state: AppState): PlannedBucket | undefined {
+  return state.buckets.find((b) => b.isReceivable)
+}
+
+/** Where money received should go by default: paying back what friends owe comes first. */
+function creditSuggestion(state: AppState): PlannedBucket | undefined {
+  const receivable = receivableBucket(state)
+  return receivable && balanceOfBucket(state, receivable.id) < 0 ? receivable : bufferBucket(state)
+}
+
 export function balanceOfBucket(state: AppState, bucketId: string): Paise {
   let total = 0
   for (const entry of state.ledger) if (entry.bucketId === bucketId) total += entry.amount
@@ -120,6 +130,17 @@ function entriesFor(state: AppState, txn: Transaction, bucketId: string): Ledger
     return card ? [refund, { bucketId: card.id, amount: -txn.amount, kind: 'refund', transactionId: txn.id }] : [refund]
   }
   if (card && bucket.id === card.id) return []
+
+  const receivable = receivableBucket(state)
+  const owedPart = txn.myShare !== undefined ? txn.amount - txn.myShare : 0
+  if (receivable && owedPart > 0 && bucket.id !== receivable.id && bucket.type !== 'card') {
+    const mine = txn.myShare! > 0 ? entriesFor(state, { ...txn, amount: txn.myShare!, myShare: undefined }, bucketId) : []
+    const theirs = card
+      ? planCardSwipe({ categoryBucketId: receivable.id, cardBucketId: card.id, amount: owedPart, transactionId: txn.id })
+      : planSpend(receivable.id, owedPart, txn.id)
+    return [...mine, ...theirs]
+  }
+
   if (card) return planCardSwipe({ categoryBucketId: bucketId, cardBucketId: card.id, amount: txn.amount, transactionId: txn.id })
   if (bucket.type === 'card') return planCardPayment(bucket.id, txn.amount, txn.id)
   if (bucket.type === 'committed' || bucket.type === 'bill' || bucket.type === 'sinking') {
@@ -198,7 +219,45 @@ export function pendingSalary(state: AppState): Transaction | undefined {
 export function dismissSalary(state: AppState, txnId: string): AppState {
   const txn = state.transactions.find((t) => t.id === txnId)
   if (!txn || txn.salary !== 'pending') return state
-  return withTransaction(state, { ...txn, salary: undefined, status: 'inbox', suggestedBucketId: bufferBucket(state)?.id ?? null })
+  return withTransaction(state, { ...txn, salary: undefined, status: 'inbox', suggestedBucketId: creditSuggestion(state)?.id ?? null })
+}
+
+function withReceivable(state: AppState): AppState {
+  if (receivableBucket(state)) return state
+  const archived = state.archivedBuckets.find((b) => b.isReceivable)
+  if (archived) return restoreBucket(state, archived.id)
+  const home = state.buckets.find((b) => b.type === 'surplus')?.groupId ?? state.groups[state.groups.length - 1].id
+  const bucket: PlannedBucket = {
+    id: newId('b'),
+    name: 'Friends owe me',
+    type: 'surplus',
+    groupId: home,
+    monthlyAmount: 0,
+    dueWindow: null,
+    amountTolerance: 0,
+    target: null,
+    targetDueDate: null,
+    instalmentsRemaining: null,
+    isBuffer: false,
+    matchKeywords: [],
+    cardAccountId: null,
+    isReceivable: true,
+  }
+  return { ...state, buckets: [...state.buckets, bucket] }
+}
+
+/**
+ * Splits a bill paid in full: only `myShare` stays in its bucket, the rest moves to "Friends owe me"
+ * until they pay it back. A share equal to the amount undoes the split.
+ */
+export function splitTransaction(state: AppState, txnId: string, myShare: Paise): AppState {
+  const txn = state.transactions.find((t) => t.id === txnId)
+  if (!txn || txn.direction !== 'debit' || txn.status !== 'applied' || !txn.bucketId || !Number.isInteger(myShare) || myShare < 0) return state
+  const bucket = findBucket(state, txn.bucketId)
+  if (!bucket || bucket.type === 'card' || bucket.isReceivable) return state
+  const isSplit = myShare < txn.amount
+  const next = withTransaction(withoutEntriesFor(isSplit ? withReceivable(state) : state, txnId), { ...txn, myShare: isSplit ? myShare : undefined })
+  return assignTransaction(next, txnId, txn.bucketId)
 }
 
 export function setTransactionStatus(state: AppState, txnId: string, status: 'ignored' | 'transfer'): AppState {
@@ -293,6 +352,7 @@ export function editTransaction(state: AppState, txnId: string, patch: { amount?
   const txn = state.transactions.find((t) => t.id === txnId)
   if (!txn || (patch.amount !== undefined && patch.amount <= 0)) return state
   const updated: Transaction = { ...txn, ...patch, merchant: patch.merchant?.trim() || txn.merchant }
+  if (updated.myShare !== undefined && updated.myShare >= updated.amount) updated.myShare = undefined
   const next = withTransaction(withoutEntriesFor(state, txnId), updated)
   return txn.status === 'applied' && txn.bucketId ? assignTransaction(next, txnId, txn.bucketId) : next
 }
@@ -583,7 +643,7 @@ function looksLikeSalary(state: AppState, text: string, amount: Paise): boolean 
 function lastBucketFor(state: AppState, txn: Transaction): string | null {
   const name = normaliseMerchant(txn.merchant)
   if (!name || txn.merchant === 'Unknown') return null
-  const spendBucket = (id: string | null) => state.buckets.some((b) => b.id === id && b.type !== 'card')
+  const spendBucket = (id: string | null) => state.buckets.some((b) => b.id === id && b.type !== 'card' && !b.isReceivable)
   const earlier = state.transactions.find(
     (t) => t.id !== txn.id && t.direction === 'debit' && t.status === 'applied' && spendBucket(t.bucketId) && normaliseMerchant(t.merchant) === name,
   )
@@ -649,13 +709,13 @@ export function ingestSms(
       return { state: next, outcome: { kind: 'salary', amount: txn.amount } }
     }
     const refundTo = matchRule(next.rules, merchant)?.bucketId ?? lastBucketFor(next, txn)
-    if (refundTo && next.buckets.some((b) => b.id === refundTo)) {
+    if (refundTo && next.buckets.some((b) => b.id === refundTo && !b.isReceivable)) {
       next = assignTransaction(next, txn.id, refundTo)
       return { state: next, outcome: { kind: 'applied', bucketName: bucketById(next, refundTo).name, amount: txn.amount, merchant } }
     }
-    const buffer = bufferBucket(next)
-    if (buffer) next = withTransaction(next, { ...txn, suggestedBucketId: buffer.id, confidence: null })
-    return { state: next, outcome: { kind: 'inbox', amount: txn.amount, merchant, suggestion: buffer?.name ?? null } }
+    const suggestion = creditSuggestion(next)
+    if (suggestion) next = withTransaction(next, { ...txn, suggestedBucketId: suggestion.id, confidence: null })
+    return { state: next, outcome: { kind: 'inbox', amount: txn.amount, merchant, suggestion: suggestion?.name ?? null } }
   }
 
   if (!isCardAccount && CARD_BILL_PAYMENT.test(text)) {

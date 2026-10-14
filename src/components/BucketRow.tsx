@@ -6,7 +6,7 @@ export function BucketRow({ view, onOpen }: { view: BucketView; onOpen: (bucketI
     <button className={`bucket-row ${view.overspent ? 'is-overspent' : ''}`} onClick={() => onOpen(view.bucket.id)}>
       <span className="bucket-row__top">
         <span className="bucket-row__name">{view.bucket.name}</span>
-        <Money value={view.balance} className="bucket-row__amount" />
+        <Money value={view.bucket.isReceivable ? -view.balance : view.balance} className="bucket-row__amount" />
       </span>
       <span className="bucket-row__bottom">
         <span className="bucket-row__detail">{view.detail}</span>

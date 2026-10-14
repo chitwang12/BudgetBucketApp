@@ -39,7 +39,7 @@ export function AddTransactionSheet({ open, initialBucketId, onClose }: { open: 
       <Eyebrow>Bucket</Eyebrow>
       <div className="chips">
         {state.buckets
-          .filter((b) => b.type !== 'surplus' || b.isBuffer)
+          .filter((b) => b.type !== 'surplus' || b.isBuffer || b.isReceivable)
           .sort((a, b) => Number(b.type === 'flexible') - Number(a.type === 'flexible'))
           .map((b) => (
             <button

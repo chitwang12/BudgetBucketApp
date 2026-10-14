@@ -1106,6 +1106,17 @@ p {
   color: #6f1f12;
 }
 
+.callout--owed {
+  background: var(--mango-soft);
+  color: #5c3a06;
+}
+
+.callout__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* ---------- Inbox ---------- */
 
 .inbox-card {

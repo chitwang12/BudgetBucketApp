@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import { Money, PageHeader } from '../components/ui.tsx'
+import { formatINR } from '../core/index.ts'
+import { balanceOfBucket } from '../data/operations.ts'
 import { inboxItems, relativeTime } from '../data/selectors.ts'
 import { useStore } from '../data/store.tsx'
 import type { Transaction } from '../data/types.ts'
@@ -34,7 +36,7 @@ function InboxCard({ txn }: { txn: Transaction }) {
   const suggestion = state.buckets.find((b) => b.id === txn.suggestedBucketId)
   const selected = state.buckets.find((b) => b.id === selectedId)
   const choices = state.buckets
-    .filter((b) => b.type !== 'surplus' || b.isBuffer)
+    .filter((b) => b.type !== 'surplus' || b.isBuffer || b.isReceivable)
     .sort((a, b) => Number(b.id === suggestion?.id) - Number(a.id === suggestion?.id))
   const { toast } = useSheets()
 
@@ -60,7 +62,11 @@ function InboxCard({ txn }: { txn: Transaction }) {
 
       {suggestion && (
         <p className="suggestion">
-          {isCredit ? (
+          {isCredit && suggestion.isReceivable ? (
+            <>
+              Money received · friends owe you <strong>{formatINR(-balanceOfBucket(state, suggestion.id))}</strong>. Is this a payback?
+            </>
+          ) : isCredit ? (
             <>
               Money received · add it to <strong>{suggestion.name}</strong>, or pick the bucket it pays back
             </>
