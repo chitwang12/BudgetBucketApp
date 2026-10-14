@@ -3,6 +3,56 @@ import { matchRule, normaliseMerchant } from './match.ts'
 import { rupees } from './money.ts'
 import { parseSms, redactSms, smsFingerprint } from './sms.ts'
 
+describe('parseSms: SBI and credit cards', () => {
+  const cases: [string, string, object][] = [
+    [
+      'SBI UPI debit',
+      'Dear UPI user A/C X4321 debited by 250.0 on date 14Oct26 trf to SWIGGY Refno 428765123456. If not u? call 1800111109. -SBI',
+      { amount: rupees(250), direction: 'debit', merchantRaw: 'SWIGGY', last4: '4321' },
+    ],
+    [
+      'SBI transfer',
+      'Your A/C XXXXX4321 Debited INR 1,200.00 on 14/10/26 -Transferred to Mr RAHUL KUMAR. Avl Balance INR 25,310.50-SBI',
+      { amount: rupees(1_200), direction: 'debit', last4: '4321' },
+    ],
+    [
+      'SBI salary credit',
+      'Dear Customer, Your A/C XXXXX4321 has a credit by NEFT of Rs 50,000.00 on 14/10/26 by ACME TECHNOLOGIES. Avl Bal Rs 75,310.50-SBI',
+      { amount: rupees(50_000), direction: 'credit', merchantRaw: 'ACME TECHNOLOGIES', last4: '4321' },
+    ],
+    [
+      'SBI Card',
+      'Rs.1,499.00 spent on your SBI Credit Card ending 5566 at AMAZON on 14/10/26. Trxn. not done by you? Report at https://sbicard.com/Dispute',
+      { amount: rupees(1_499), direction: 'debit', merchantRaw: 'AMAZON', last4: '5566' },
+    ],
+    [
+      'HDFC card, Txn wording',
+      'Txn Rs.899.00 On HDFC Bank Card 7788 At MYNTRA by UPI 428712345678 On 14-10',
+      { amount: rupees(899), direction: 'debit', merchantRaw: 'MYNTRA', last4: '7788' },
+    ],
+    [
+      'Axis card',
+      'Spent INR 750 Axis Bank Card no. XX2233 14-10-26 20:11:05 IST BLINKIT Avl Limit: INR 98,250',
+      { amount: rupees(750), direction: 'debit', merchantRaw: 'BLINKIT', last4: '2233' },
+    ],
+  ]
+  for (const [name, text, expected] of cases) {
+    it(`reads ${name}`, () => expect(parseSms(text)).toMatchObject({ kind: 'transaction', ...expected }))
+  }
+
+  it('keeps merchants whose names start like "account"', () => {
+    expect(parseSms('Rs 499 debited from A/c XX4321 to ACT FIBERNET on 14-10-26')).toMatchObject({ merchantRaw: 'ACT FIBERNET' })
+  })
+
+  it('never takes the last 4 from a full account number', () => {
+    expect(parseSms('Rs 500 debited from account 123456789012 to VPA a@b')).toMatchObject({ last4: null })
+  })
+
+  it('ignores a card OTP', () => {
+    expect(parseSms('428913 is the OTP for your SBI Card transaction of Rs 1,499.00 at AMAZON. Do not share.').kind).toBe('ignore')
+  })
+})
+
 describe('parseSms', () => {
   it('reads a UPI debit', () => {
     expect(

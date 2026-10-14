@@ -20,15 +20,18 @@ const BILL = /\b(bill (?:amount|amt)|amount due|amt due|total due|bill (?:of|for
 const CURRENCY_AMOUNT = /(?:rs\.?|inr|₹)\s*([\d,]+(?:\.\d{1,2})?)/gi
 const BARE_AMOUNT = /\b(?:debited|credited)\s+(?:by|with|for)?\s*([\d,]+(?:\.\d{1,2})?)/i
 const NOT_THE_AMOUNT = /(?:bal(?:ance)?|limit|avl\.?)[\s:.-]*(?:is\s*)?$/i
-const DEBIT = /\b(debited|spent|sent|paid|withdrawn|purchase|debit)\b/i
-const CREDIT = /\b(credited|received|deposited|refund(?:ed)?|reversed|reversal)\b/i
-const LAST4 = /(?:a\/c|acct|account|card)\s*(?:no\.?\s*)?(?:ending\s*(?:with\s*)?)?[x*•]+\s*(\d{4})\b/i
+const DEBIT = /\b(debited|spent|sent|paid|withdrawn|purchase|debit|txn)\b/i
+const CREDIT = /\b(credited|received|deposited|refund(?:ed)?|reversed|reversal|a credit)\b/i
+// Digits must stand alone, so a full account number never yields a false last 4.
+const LAST4 = /(?:a\/c|acct|account|card)\s*(?:no\.?\s*)?(?:ending\s*(?:with\s*|in\s*)?)?[x*•]*\s*(\d{4})\b/i
 
 const MERCHANT_PATTERNS = [
   /\b(?:vpa|upi id)\s+([\w.-]+@[\w.-]+)/i,
-  /\b(?:to|at|towards|trf to)\s+(?:vpa\s+)?([A-Za-z0-9@&'._ -]{2,40}?)(?=\s+(?:on|ref|refno|upi|via|avl|not|dated|from|is)\b|[.,;:]|\s*$)/i,
+  /\b(?:to|at|towards|trf to)\s+(?:vpa\s+)?([A-Za-z0-9@&'._ -]{2,40}?)(?=\s+(?:on|ref|refno|upi|via|avl|not|dated|from|is|by)\b|[.,;:]|\s*$)/i,
   /\bon\s+([A-Z][A-Z0-9&'._ -]{2,40}?)(?=[.,;]|\s+(?:avl|ref)\b|\s*$)/,
+  /\bIST\s+([A-Z][A-Z0-9&'._ -]{2,40}?)(?=\s+avl\b)/i,
   /\bfrom\s+(?:vpa\s+)?([A-Za-z0-9@&'._ -]{2,40}?)(?=\s+(?:on|ref|refno|upi|via|avl)\b|[.,;:]|\s*$)/i,
+  /\bby\s+(?!(?:neft|imps|rtgs|upi|you)\b)([A-Za-z][A-Za-z0-9&'._ -]{2,40}?)(?=\s+(?:on|ref|avl)\b|[.,;]|\s*$)/i,
 ]
 
 function firstAmount(text: string): Paise | null {
@@ -53,7 +56,7 @@ function merchant(text: string): string | null {
   for (const pattern of MERCHANT_PATTERNS) {
     const match = pattern.exec(text)
     const name = match?.[1]?.replace(/\s+/g, ' ').trim()
-    if (name && !/^(your|a\/c|ac|account|card|xx)/i.test(name)) return name
+    if (name && !/^(?:(?:your|a\/c|ac|account|card)\b|x{2,})/i.test(name)) return name
   }
   return null
 }
