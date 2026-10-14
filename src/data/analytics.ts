@@ -50,6 +50,11 @@ function localDate(state: AppState, iso: string): IsoDate {
   return dateInZone(new Date(iso), state.settings.timezone)
 }
 
+/** Live and archived buckets, for reading history. */
+export function everyBucket(state: AppState): PlannedBucket[] {
+  return [...state.buckets, ...state.archivedBuckets]
+}
+
 export function allCycles(state: AppState): Cycle[] {
   return [...state.history, state.cycle]
 }
@@ -58,7 +63,7 @@ export function buildReport(state: AppState, cycle: Cycle, today: IsoDate): Cycl
   const isCurrent = cycle.id === state.cycle.id
   const length = diffDays(cycle.start, cycle.end) + 1
   const elapsed = isCurrent ? Math.min(length, Math.max(1, diffDays(cycle.start, today) + 1)) : length
-  const buckets = new Map(state.buckets.map((b) => [b.id, b]))
+  const buckets = new Map(everyBucket(state).map((b) => [b.id, b]))
   const spentByBucket = new Map<string, Paise>()
   const fundedByBucket = new Map<string, Paise>()
   const daily = Array.from({ length }, () => 0)
@@ -91,10 +96,10 @@ export function buildReport(state: AppState, cycle: Cycle, today: IsoDate): Cycl
   const outflow = byGroup.committed + byGroup.bills + byGroup.everyday + byGroup.sinking
   const income = cycle.income
 
-  const everyday = state.buckets.filter((b) => b.type === 'flexible')
+  const everyday = everyBucket(state).filter((b) => b.type === 'flexible')
   const overspent = everyday.filter((b) => (spentByBucket.get(b.id) ?? 0) > (fundedByBucket.get(b.id) ?? 0) && (fundedByBucket.get(b.id) ?? 0) > 0).map((b) => b.id)
 
-  const payments: PaymentRecord[] = state.buckets
+  const payments: PaymentRecord[] = everyBucket(state)
     .filter((b) => b.type === 'committed' && b.dueWindow && (fundedByBucket.get(b.id) ?? 0) > 0)
     .map((b) => {
       const window = dueWindowInCycle(b.dueWindow!, cycle)
@@ -212,8 +217,8 @@ function displayMerchant(raw: string): string {
 
 /** Where everyday money went, by merchant, across the given cycles. */
 export function merchantStats(state: AppState, cycles: Cycle[], limit = 8): MerchantStat[] {
-  const everyday = new Set(state.buckets.filter((b) => b.type === 'flexible').map((b) => b.id))
-  const names = new Map(state.buckets.map((b) => [b.id, b.name]))
+  const everyday = new Set(everyBucket(state).filter((b) => b.type === 'flexible').map((b) => b.id))
+  const names = new Map(everyBucket(state).map((b) => [b.id, b.name]))
   const totals = new Map<string, { total: Paise; count: number; buckets: Map<string, number> }>()
   let grand = 0
   for (const txn of state.transactions) {
@@ -275,7 +280,7 @@ export function insights(state: AppState, reports: CycleReport[]): Insight[] {
   const result: Insight[] = []
   const current = reports.at(-1)
   const closed = reports.filter((r) => !r.isCurrent)
-  const names = new Map(state.buckets.map((b) => [b.id, b.name]))
+  const names = new Map(everyBucket(state).map((b) => [b.id, b.name]))
 
   if (current && current.everydayPlanned > 0) {
     const { difference, spent, expected } = pace(current)

@@ -890,6 +890,13 @@ p {
   color: var(--cream);
 }
 
+.chip.is-current:disabled {
+  opacity: 1;
+  border-style: dashed;
+  border-color: rgba(18, 18, 18, 0.35);
+  color: var(--ink-2);
+}
+
 .chip.is-suggested {
   background: var(--mango);
   border-color: var(--mango);
@@ -1447,6 +1454,65 @@ p {
   color: var(--ink-3);
 }
 
+.setup {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 18px;
+  padding: 20px 6px 8px;
+}
+
+.setup > .eyebrow,
+.setup > h2 {
+  margin: 0;
+  padding: 0 14px;
+}
+
+.setup .link-row {
+  margin-top: 0;
+  padding: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.setup .link-row:first-of-type {
+  margin-top: 8px;
+}
+
+.setup .link-row .activity__meta {
+  white-space: normal;
+}
+
+.welcome {
+  padding-top: calc(var(--safe-top) + 12vh);
+}
+
+.welcome .card {
+  padding: 20px;
+}
+
+.welcome form {
+  display: grid;
+  gap: 16px;
+}
+
+.fineprint--left {
+  margin: 0 0 16px;
+  text-align: left;
+  line-height: 1.5;
+}
+
+.check--wrap {
+  align-items: flex-start;
+  margin: 2px 0 12px;
+}
+
+.check--wrap span {
+  white-space: normal;
+}
+
+.break-all {
+  word-break: break-all;
+}
+
 /* ---------- Shared additions ---------- */
 
 .topline__actions {
@@ -1554,6 +1620,106 @@ p {
   display: grid;
   gap: 14px;
   padding: 18px;
+}
+
+.field__hint--warn {
+  color: var(--red);
+}
+
+.button--flush {
+  margin-top: 0;
+}
+
+/* ---------- Bucket and group editors ---------- */
+
+.plan-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px 8px 10px;
+}
+
+.plan-actions__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.plan-actions__add svg {
+  width: 18px;
+  height: 18px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--tone, var(--ink));
+  color: var(--paper);
+}
+
+.plan-actions__add:active {
+  background: rgba(18, 18, 18, 0.05);
+}
+
+.add-tile--spaced {
+  margin-top: 22px;
+}
+
+.kind-list {
+  display: grid;
+  gap: 8px;
+}
+
+.kind {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 13px 16px;
+  text-align: left;
+  border-radius: 18px;
+  background: var(--paper);
+  border: 1.5px solid var(--line);
+  transition:
+    border-color 0.15s,
+    background 0.15s;
+}
+
+.kind.is-active {
+  border-color: var(--ink);
+  background: var(--mango-soft);
+}
+
+.kind__title {
+  font-weight: 600;
+}
+
+.kind__hint {
+  font-size: 13px;
+  color: var(--ink-2);
+}
+
+.swatches {
+  display: flex;
+  gap: 12px;
+}
+
+.swatch {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--tone);
+  box-shadow: inset 0 0 0 1px rgba(18, 18, 18, 0.12);
+  transition: box-shadow 0.15s;
+}
+
+.swatch.is-active {
+  box-shadow:
+    0 0 0 3px var(--cream),
+    0 0 0 5px var(--ink);
 }
 
 /* ---------- Collapsible groups ---------- */

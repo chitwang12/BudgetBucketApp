@@ -13,6 +13,7 @@ import {
   viewGroups,
   type GroupView,
 } from '../data/selectors.ts'
+import { findBucket } from '../data/operations.ts'
 import { useStore } from '../data/store.tsx'
 import type { AppState, Transaction } from '../data/types.ts'
 import { navigate } from '../lib/router.ts'
@@ -33,7 +34,7 @@ function marqueeItems(groups: GroupView[]): string[] {
 }
 
 function bucketName(state: AppState, id: string | null): string | null {
-  return id ? (state.buckets.find((b) => b.id === id)?.name ?? null) : null
+  return findBucket(state, id)?.name ?? null
 }
 
 export function ActivityRow({ txn }: { txn: Transaction }) {
@@ -67,6 +68,7 @@ export function Home() {
   const { day, length } = cycleDay(state, today)
   const inbox = inboxItems(state)
   const recent = recentTransactions(state)
+  const settingUp = state.cycle.income === 0 && state.history.length === 0
 
   return (
     <div className="screen">
@@ -84,6 +86,34 @@ export function Home() {
           </button>
         </span>
       </div>
+
+      {settingUp && (
+        <section className="card setup">
+          <Eyebrow>Fresh start</Eyebrow>
+          <h2 className="display display--sm">Three steps to go</h2>
+          <button className="link-row" onClick={() => navigate('/accounts')}>
+            <span className="activity__main">
+              <span className="activity__merchant">1 · Your accounts</span>
+              <span className="activity__meta">Rename them and set the last 4 digits your bank SMS show</span>
+            </span>
+            <ArrowIcon />
+          </button>
+          <button className="link-row" onClick={() => navigate('/plan')}>
+            <span className="activity__main">
+              <span className="activity__merchant">2 · Your plan</span>
+              <span className="activity__meta">Edit, add or remove buckets and their monthly amounts</span>
+            </span>
+            <ArrowIcon />
+          </button>
+          <button className="link-row" onClick={() => navigate('/plan/allocate')}>
+            <span className="activity__main">
+              <span className="activity__merchant">3 · Salary day</span>
+              <span className="activity__meta">Check the salary day in Settings, then split your take-home</span>
+            </span>
+            <ArrowIcon />
+          </button>
+        </section>
+      )}
 
       <section className="hero">
         <Eyebrow>Safe to spend today</Eyebrow>
@@ -131,6 +161,7 @@ export function Home() {
           {recent.map((txn) => (
             <ActivityRow key={txn.id} txn={txn} />
           ))}
+          {recent.length === 0 && <p className="empty-line">Nothing yet. Payments appear here as your bank SMS arrive.</p>}
         </div>
       </section>
     </div>

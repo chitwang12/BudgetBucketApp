@@ -89,6 +89,8 @@ export interface AppState {
   accounts: Account[]
   groups: Group[]
   buckets: PlannedBucket[]
+  /** Removed buckets that still have history; kept so past cycles keep their names. */
+  archivedBuckets: PlannedBucket[]
   cycle: Cycle
   /** Closed cycles, oldest first. */
   history: Cycle[]

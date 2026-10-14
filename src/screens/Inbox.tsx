@@ -3,6 +3,7 @@ import { Money, PageHeader } from '../components/ui.tsx'
 import { inboxItems, relativeTime } from '../data/selectors.ts'
 import { useStore } from '../data/store.tsx'
 import type { Transaction } from '../data/types.ts'
+import { useSheets } from '../lib/sheets.tsx'
 
 export function Inbox() {
   const { state } = useStore()
@@ -26,11 +27,20 @@ export function Inbox() {
 function InboxCard({ txn }: { txn: Transaction }) {
   const { state, assign, ignore, markTransfer } = useStore()
   const [remember, setRemember] = useState(true)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const account = state.accounts.find((a) => a.id === txn.accountId)
   const suggestion = state.buckets.find((b) => b.id === txn.suggestedBucketId)
+  const selected = state.buckets.find((b) => b.id === selectedId)
   const choices = state.buckets
     .filter((b) => b.type !== 'surplus' || b.isBuffer)
     .sort((a, b) => Number(b.id === suggestion?.id) - Number(a.id === suggestion?.id))
+  const { toast } = useSheets()
+
+  const transfer = () => {
+    if (!selected) return
+    assign(txn.id, selected.id, remember)
+    toast(`${txn.merchant} → ${selected.name}`)
+  }
 
   return (
     <article className="card inbox-card">
@@ -55,11 +65,20 @@ function InboxCard({ txn }: { txn: Transaction }) {
 
       <div className="chips chips--scroll">
         {choices.map((b) => (
-          <button key={b.id} className={`chip ${b.id === suggestion?.id ? 'is-suggested' : ''}`} onClick={() => assign(txn.id, b.id, remember)}>
+          <button
+            key={b.id}
+            className={`chip ${b.id === selectedId ? 'is-active' : b.id === suggestion?.id ? 'is-suggested' : ''}`}
+            aria-pressed={b.id === selectedId}
+            onClick={() => setSelectedId(b.id === selectedId ? null : b.id)}
+          >
             {b.name}
           </button>
         ))}
       </div>
+
+      <button className="button button--ink button--block" disabled={!selected} onClick={transfer}>
+        {selected ? `Transfer to ${selected.name}` : 'Pick a bucket'}
+      </button>
 
       <footer className="inbox-card__footer">
         <label className="check">
@@ -68,7 +87,7 @@ function InboxCard({ txn }: { txn: Transaction }) {
         </label>
         <div className="inbox-card__links">
           <button className="link" onClick={() => markTransfer(txn.id)}>
-            Transfer
+            Own account
           </button>
           <button className="link" onClick={() => ignore(txn.id)}>
             Ignore

@@ -1,12 +1,15 @@
 import { useState } from 'react'
 import { GroupSection } from '../components/GroupSection.tsx'
-import { ArrowIcon } from '../components/Icons.tsx'
-import { MoneyInput } from '../components/MoneyInput.tsx'
-import { Eyebrow, Money, PageHeader, Sheet } from '../components/ui.tsx'
+import { ArrowIcon, PlusIcon } from '../components/Icons.tsx'
+import { Eyebrow, Money, PageHeader } from '../components/ui.tsx'
 import { formatINR, sum } from '../core/index.ts'
 import { useStore } from '../data/store.tsx'
 import type { PlannedBucket } from '../data/types.ts'
 import { navigate } from '../lib/router.ts'
+import { useSheets } from '../lib/sheets.tsx'
+import { AddBucketSheet, EditBucketSheet, GroupSheet } from './BucketEditors.tsx'
+
+type Editor = { kind: 'bucket'; id: string } | { kind: 'add'; groupId: string } | { kind: 'group'; id: string | null }
 
 const typeLabels: Record<PlannedBucket['type'], string> = {
   committed: 'Committed',
@@ -34,8 +37,9 @@ function planLine(bucket: PlannedBucket): string {
 }
 
 export function Plan() {
-  const { state } = useStore()
-  const [editing, setEditing] = useState<string | null>(null)
+  const { state, restoreBucket } = useStore()
+  const { toast } = useSheets()
+  const [editor, setEditor] = useState<Editor | null>(null)
   const planned = sum(state.buckets.filter((b) => b.type !== 'sinking').map((b) => b.monthlyAmount))
 
   return (
@@ -71,12 +75,11 @@ export function Plan() {
 
       {state.groups.map((group) => {
         const buckets = state.buckets.filter((b) => b.groupId === group.id)
-        if (buckets.length === 0) return null
         return (
           <GroupSection key={group.id} group={group} count={buckets.length} total={sum(buckets.map((b) => b.monthlyAmount))}>
             <div className="card list">
               {buckets.map((bucket) => (
-                <button key={bucket.id} className="plan-row" onClick={() => setEditing(bucket.id)}>
+                <button key={bucket.id} className="plan-row" onClick={() => setEditor({ kind: 'bucket', id: bucket.id })}>
                   <span className="activity__main">
                     <span className="activity__merchant">{bucket.name}</span>
                     <span className="activity__meta">{planLine(bucket)}</span>
@@ -84,10 +87,51 @@ export function Plan() {
                   <Money value={bucket.type === 'sinking' ? (bucket.target ?? 0) : bucket.monthlyAmount} />
                 </button>
               ))}
+              <div className="plan-actions">
+                <button className="plan-actions__add" onClick={() => setEditor({ kind: 'add', groupId: group.id })}>
+                  <PlusIcon /> Add bucket
+                </button>
+                <button className="link" onClick={() => setEditor({ kind: 'group', id: group.id })}>
+                  Edit group
+                </button>
+              </div>
             </div>
           </GroupSection>
         )
       })}
+
+      <button className="add-tile add-tile--spaced" onClick={() => setEditor({ kind: 'group', id: null })}>
+        <PlusIcon />
+        <span>New group</span>
+      </button>
+
+      {state.archivedBuckets.length > 0 && (
+        <section className="group">
+          <header className="group__header">
+            <h2 className="display display--sm">Archived</h2>
+            <span className="eyebrow">{state.archivedBuckets.length}</span>
+          </header>
+          <div className="card list">
+            {state.archivedBuckets.map((bucket) => (
+              <div key={bucket.id} className="activity">
+                <span className="activity__main">
+                  <span className="activity__merchant">{bucket.name}</span>
+                  <span className="activity__meta">History kept · not in the plan</span>
+                </span>
+                <button
+                  className="link link--inline"
+                  onClick={() => {
+                    restoreBucket(bucket.id)
+                    toast(`${bucket.name} is back in the plan`)
+                  }}
+                >
+                  Restore
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="group">
         <header className="group__header">
@@ -104,55 +148,9 @@ export function Plan() {
         </div>
       </section>
 
-      {editing && <EditBucketSheet key={editing} bucketId={editing} onClose={() => setEditing(null)} />}
+      {editor?.kind === 'bucket' && <EditBucketSheet key={editor.id} bucketId={editor.id} onClose={() => setEditor(null)} />}
+      {editor?.kind === 'add' && <AddBucketSheet key={editor.groupId} groupId={editor.groupId} onClose={() => setEditor(null)} />}
+      {editor?.kind === 'group' && <GroupSheet key={editor.id ?? 'new'} groupId={editor.id} onClose={() => setEditor(null)} />}
     </div>
-  )
-}
-
-function EditBucketSheet({ bucketId, onClose }: { bucketId: string; onClose: () => void }) {
-  const { state, updateBucket } = useStore()
-  const bucket = state.buckets.find((b) => b.id === bucketId)
-  const [amount, setAmount] = useState(bucket?.type === 'sinking' ? (bucket.target ?? 0) : (bucket?.monthlyAmount ?? 0))
-  const [keywords, setKeywords] = useState(bucket?.matchKeywords.join(', ') ?? '')
-  const [startDay, setStartDay] = useState(bucket?.dueWindow?.startDay ?? 0)
-  const [endDay, setEndDay] = useState(bucket?.dueWindow?.endDay ?? 0)
-  if (!bucket) return null
-
-  const hasWindow = ['committed', 'bill', 'card'].includes(bucket.type)
-  const save = () => {
-    updateBucket(bucket.id, {
-      ...(bucket.type === 'sinking' ? { target: amount } : { monthlyAmount: amount }),
-      matchKeywords: keywords.split(',').map((k) => k.trim()).filter(Boolean),
-      dueWindow: hasWindow && startDay > 0 ? { startDay, endDay: Math.max(startDay, endDay || startDay) } : bucket.dueWindow,
-    })
-    onClose()
-  }
-
-  return (
-    <Sheet open onClose={onClose} title={bucket.name}>
-      <Eyebrow>{bucket.type === 'sinking' ? 'Target' : 'Monthly amount'}</Eyebrow>
-      <MoneyInput value={amount} onChange={setAmount} size="lg" label="Amount" />
-      {hasWindow && (
-        <div className="field-row">
-          <label className="field">
-            <Eyebrow>Due from day</Eyebrow>
-            <input className="text-input" inputMode="numeric" value={startDay || ''} onChange={(e) => setStartDay(Math.min(31, Number(e.target.value) || 0))} />
-          </label>
-          <label className="field">
-            <Eyebrow>To day</Eyebrow>
-            <input className="text-input" inputMode="numeric" value={endDay || ''} onChange={(e) => setEndDay(Math.min(31, Number(e.target.value) || 0))} />
-          </label>
-        </div>
-      )}
-      {bucket.type !== 'flexible' && bucket.type !== 'surplus' && (
-        <label className="field">
-          <Eyebrow>SMS keywords</Eyebrow>
-          <input className="text-input" value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder="landlord, rent" />
-        </label>
-      )}
-      <button className="button button--ink button--block" onClick={save}>
-        Save
-      </button>
-    </Sheet>
   )
 }

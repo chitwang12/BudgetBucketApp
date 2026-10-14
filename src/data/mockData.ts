@@ -12,10 +12,10 @@ import {
   type IsoDate,
   type Paise,
 } from '../core/index.ts'
-import { assignTransaction, balanceOfBucket, cardOwed, newId, startCycle } from './operations.ts'
+import { assignTransaction, balanceOfBucket, cardOwed, freshStart, newId, startCycle } from './operations.ts'
 import type { Account, AppState, Group, LedgerEntry, PlannedBucket, Transaction } from './types.ts'
 
-export const STATE_VERSION = 2
+export const STATE_VERSION = 3
 export const DEMO_HISTORY_CYCLES = 6
 const DEMO_INCOME = rupees(50_000)
 
@@ -285,6 +285,7 @@ export function createDemoState(today: IsoDate): AppState {
     accounts,
     groups,
     buckets,
+    archivedBuckets: [],
     cycle: first,
     history: [],
     ledger,
@@ -358,7 +359,13 @@ export function createDemoState(today: IsoDate): AppState {
   return state
 }
 
-/** Bank-style messages for the "Simulate SMS" sheet. */
+/** The demo plan with nothing spent and no history: what a brand-new server starts with. */
+export function createStarterState(today: IsoDate): AppState {
+  const demo = createDemoState(today)
+  return freshStart({ ...demo, settings: { ...demo.settings, lastSmsAt: null } }, today)
+}
+
+/** Bank-style messages used by the tests. */
 export function sampleMessages(today: IsoDate): { label: string; text: string }[] {
   const { y, m, d } = parseIsoDate(today)
   const date = `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${String(y).slice(2)}`

@@ -2,6 +2,7 @@ import {
   addDays,
   AUTO_APPLY_CONFIDENCE,
   confirmAllocation as confirmAllocationEntries,
+  cycleContaining,
   cycleForSalaryDate,
   dateInZone,
   formatINR,
@@ -19,15 +20,33 @@ import {
   smsFingerprint,
   type AllocationLine,
   type Direction,
+  type DueWindow,
   type Instrument,
   type IsoDate,
   type LedgerEntryDraft,
   type Paise,
 } from '../core/index.ts'
-import type { Account, AppState, LedgerEntry, PlannedBucket, Transaction } from './types.ts'
+import type { Account, AppState, Group, LedgerEntry, PlannedBucket, Tone, Transaction } from './types.ts'
+
+let seededIds: { seed: string; next: number } | null = null
+
+/**
+ * Runs a change with ids derived from `seed`, so the phone and the server produce identical ids
+ * when they apply the same command.
+ */
+export function withSeededIds<T>(seed: string, run: () => T): T {
+  const previous = seededIds
+  seededIds = { seed, next: 0 }
+  try {
+    return run()
+  } finally {
+    seededIds = previous
+  }
+}
 
 /** Safari only exposes crypto.randomUUID over HTTPS, so testing on a phone over the LAN needs the fallback. */
 export function newId(prefix: string): string {
+  if (seededIds) return `${prefix}-${seededIds.seed}-${(seededIds.next++).toString(36)}`
   const random =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
       ? crypto.randomUUID().slice(0, 8)
@@ -36,9 +55,15 @@ export function newId(prefix: string): string {
 }
 
 export function bucketById(state: AppState, id: string): PlannedBucket {
-  const bucket = state.buckets.find((b) => b.id === id)
+  const bucket = findBucket(state, id)
   if (!bucket) throw new Error(`Unknown bucket ${id}`)
   return bucket
+}
+
+/** Looks in archived buckets too, for naming things in past cycles. */
+export function findBucket(state: AppState, id: string | null | undefined): PlannedBucket | undefined {
+  if (!id) return undefined
+  return state.buckets.find((b) => b.id === id) ?? state.archivedBuckets.find((b) => b.id === id)
 }
 
 export function bufferBucket(state: AppState): PlannedBucket | undefined {
@@ -192,18 +217,27 @@ export function addManualTransaction(state: AppState, input: ManualTransaction):
   return assignTransaction(withTransaction(state, txn), txn.id, input.bucketId)
 }
 
+/** What is still owed on a committed, bill or card bucket this cycle. */
+export function amountDue(state: AppState, bucket: PlannedBucket): Paise {
+  return bucket.type === 'card' ? cardOwed(state, bucket) : Math.max(0, expectedFor(state, bucket) - paidThisCycle(state, bucket.id))
+}
+
+/** Accounts a bucket can be paid from. A card bill can't be paid with a credit card. */
+export function paymentAccountsFor(state: AppState, bucket: PlannedBucket): Account[] {
+  return state.accounts.filter((a) => a.active && !(bucket.type === 'card' && a.kind === 'card'))
+}
+
 /** Records a payment that left no SMS, such as cash to household help, for whatever is still owed. */
-export function markPaid(state: AppState, bucketId: string, now: string): AppState {
+export function markPaid(state: AppState, bucketId: string, now: string, payment: { accountId?: string | null; amount?: Paise } = {}): AppState {
   const bucket = bucketById(state, bucketId)
-  const amount =
-    bucket.type === 'card' ? cardOwed(state, bucket) : Math.max(0, expectedFor(state, bucket) - paidThisCycle(state, bucketId))
+  const amount = payment.amount ?? amountDue(state, bucket)
   if (amount <= 0) return state
-  const cash = state.accounts.find((a) => a.kind === 'cash')
+  const fallback = bucket.type === 'card' ? null : (state.accounts.find((a) => a.kind === 'cash')?.id ?? null)
   return addManualTransaction(state, {
     amount,
     merchant: `${bucket.name} · marked paid`,
     bucketId,
-    accountId: bucket.type === 'card' ? null : (cash?.id ?? null),
+    accountId: payment.accountId === undefined ? fallback : payment.accountId,
     direction: 'debit',
     occurredAt: now,
   })
@@ -322,6 +356,107 @@ export function removeAccount(state: AppState, accountId: string): AppState {
   }
 }
 
+export type NewBucketType = 'flexible' | 'committed' | 'bill' | 'sinking' | 'surplus'
+
+export interface BucketInput {
+  name: string
+  groupId: string
+  type: NewBucketType
+  monthlyAmount: Paise
+  dueWindow: DueWindow | null
+  target: Paise | null
+  targetDueDate: IsoDate | null
+  matchKeywords: string[]
+}
+
+/** Adds a bucket, optionally funding it straight away from the buffer so it's usable this cycle. */
+export function addBucket(state: AppState, input: BucketInput, fundFromBuffer: Paise, now: string): AppState {
+  const bucket: PlannedBucket = {
+    id: newId('b'),
+    name: input.name.trim(),
+    type: input.type,
+    groupId: input.groupId,
+    monthlyAmount: input.type === 'sinking' ? 0 : input.monthlyAmount,
+    dueWindow: input.type === 'committed' || input.type === 'bill' ? input.dueWindow : null,
+    amountTolerance: 0,
+    target: input.type === 'sinking' ? input.target : null,
+    targetDueDate: input.type === 'sinking' ? input.targetDueDate : null,
+    instalmentsRemaining: null,
+    isBuffer: false,
+    matchKeywords: input.matchKeywords,
+    cardAccountId: null,
+  }
+  const next = { ...state, buckets: [...state.buckets, bucket] }
+  const buffer = bufferBucket(next)
+  return buffer && fundFromBuffer > 0 ? moveMoney(next, buffer.id, bucket.id, fundFromBuffer, now) : next
+}
+
+export function bucketInUse(state: AppState, bucketId: string): boolean {
+  return state.ledger.some((e) => e.bucketId === bucketId) || state.transactions.some((t) => t.bucketId === bucketId)
+}
+
+/** The buffer and card bill buckets are part of how money flows, so they can't be removed here. */
+export function canRemoveBucket(bucket: PlannedBucket): boolean {
+  return !bucket.isBuffer && bucket.type !== 'card'
+}
+
+/**
+ * Removes a bucket from the plan. Whatever it holds (or owes) goes back to the buffer. A bucket with
+ * history is archived so past cycles keep their names; an untouched one is deleted outright.
+ */
+export function removeBucket(state: AppState, bucketId: string, now: string): AppState {
+  const bucket = state.buckets.find((b) => b.id === bucketId)
+  const buffer = bufferBucket(state)
+  if (!bucket || !buffer || !canRemoveBucket(bucket)) return state
+  let next = state
+  const balance = balanceOfBucket(state, bucketId)
+  if (balance > 0) next = moveMoney(next, bucketId, buffer.id, balance, now)
+  if (balance < 0) next = moveMoney(next, buffer.id, bucketId, -balance, now)
+  const billed = Object.fromEntries(Object.entries(next.billed).filter(([id]) => id !== bucketId))
+  next = {
+    ...next,
+    buckets: next.buckets.filter((b) => b.id !== bucketId),
+    rules: next.rules.filter((r) => r.bucketId !== bucketId),
+    transactions: next.transactions.map((t) => (t.suggestedBucketId === bucketId ? { ...t, suggestedBucketId: null, confidence: null } : t)),
+    billed,
+  }
+  return bucketInUse(next, bucketId) ? { ...next, archivedBuckets: [...next.archivedBuckets, bucket] } : next
+}
+
+export function restoreBucket(state: AppState, bucketId: string): AppState {
+  const bucket = state.archivedBuckets.find((b) => b.id === bucketId)
+  if (!bucket) return state
+  const groupId = state.groups.some((g) => g.id === bucket.groupId) ? bucket.groupId : state.groups[0].id
+  return {
+    ...state,
+    buckets: [...state.buckets, { ...bucket, groupId }],
+    archivedBuckets: state.archivedBuckets.filter((b) => b.id !== bucketId),
+  }
+}
+
+export function addGroup(state: AppState, name: string, tone: Tone): AppState {
+  return { ...state, groups: [...state.groups, { id: newId('g'), name: name.trim(), tone }] }
+}
+
+export function updateGroup(state: AppState, groupId: string, patch: Partial<Pick<Group, 'name' | 'tone'>>): AppState {
+  return { ...state, groups: state.groups.map((g) => (g.id === groupId ? { ...g, ...patch, name: patch.name?.trim() || g.name } : g)) }
+}
+
+export function moveGroup(state: AppState, groupId: string, offset: -1 | 1): AppState {
+  const index = state.groups.findIndex((g) => g.id === groupId)
+  const target = index + offset
+  if (index < 0 || target < 0 || target >= state.groups.length) return state
+  const groups = [...state.groups]
+  ;[groups[index], groups[target]] = [groups[target], groups[index]]
+  return { ...state, groups }
+}
+
+/** Only empty groups can go, so no bucket is ever left without a home. */
+export function removeGroup(state: AppState, groupId: string): AppState {
+  if (state.buckets.some((b) => b.groupId === groupId) || state.groups.length <= 1) return state
+  return { ...state, groups: state.groups.filter((g) => g.id !== groupId) }
+}
+
 /** Closes the current cycle (sweeping leftovers) and opens a new one funded by the confirmed allocation. */
 export function startCycle(state: AppState, salaryDate: IsoDate, income: Paise, lines: AllocationLine[], now: string): AppState {
   const allocationEntries = confirmAllocationEntries(income, lines)
@@ -335,14 +470,36 @@ export function startCycle(state: AppState, salaryDate: IsoDate, income: Paise, 
   const bounds = cycleForSalaryDate(salaryDate, state.settings.cycleStartDay)
   const cycle = { id: newId('c'), ...bounds, income }
   const closed = { ...state.cycle, end: bounds.start > state.cycle.start ? addDays(bounds.start, -1) : state.cycle.end }
+  // The placeholder cycle after a fresh start isn't a real month unless money moved in it.
+  const placeholder = state.cycle.income === 0 && !ledger.some((e) => e.cycleId === state.cycle.id)
   const allocated = new Set(allocationEntries.map((e) => e.bucketId))
   const buckets = state.buckets.map((b) =>
     b.type === 'committed' && b.instalmentsRemaining !== null && allocated.has(b.id)
       ? { ...b, instalmentsRemaining: Math.max(0, b.instalmentsRemaining - 1) }
       : b,
   )
-  const next: AppState = { ...state, buckets, cycle, history: [...state.history, closed], billed: {} }
+  const history = placeholder ? state.history : [...state.history, closed]
+  const next: AppState = { ...state, buckets, cycle, history, billed: {} }
   return { ...next, ledger: [...ledger, ...toLedger(next, allocationEntries, now, cycle.id)] }
+}
+
+/**
+ * Keeps the plan (accounts, groups, buckets, merchant rules and settings) and clears everything that
+ * happened: transactions, balances and past cycles. The current cycle waits for the first salary day.
+ */
+export function freshStart(state: AppState, today: IsoDate): AppState {
+  const bucketIds = new Set(state.buckets.map((b) => b.id))
+  return {
+    ...state,
+    archivedBuckets: [],
+    cycle: { id: newId('c'), ...cycleContaining(today, state.settings.cycleStartDay), income: 0 },
+    history: [],
+    ledger: [],
+    transactions: [],
+    rules: state.rules.filter((r) => bucketIds.has(r.bucketId)),
+    billed: {},
+    ui: { collapsedGroups: [] },
+  }
 }
 
 export type IngestOutcome =

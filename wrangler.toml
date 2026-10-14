@@ -1,0 +1,10 @@
+name = "bucketbudget"
+compatibility_date = "2026-10-01"
+pages_build_output_dir = "dist"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bucketbudget"
+# Paste the id printed by `npx wrangler d1 create bucketbudget` (not a secret).
+database_id = "d42f8d2e-252f-4f96-9840-5be02ee58293"
+migrations_dir = "cloudflare/migrations"

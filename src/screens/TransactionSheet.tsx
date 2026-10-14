@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { MoneyInput } from '../components/MoneyInput.tsx'
 import { Eyebrow, Money, Pill, Sheet } from '../components/ui.tsx'
+import { findBucket } from '../data/operations.ts'
 import { relativeTime } from '../data/selectors.ts'
 import { useStore } from '../data/store.tsx'
 import { useSheets } from '../lib/sheets.tsx'
@@ -16,19 +17,22 @@ export function TransactionSheet({ txnId, onClose }: { txnId: string; onClose: (
   const [amount, setAmount] = useState(txn?.amount ?? 0)
   const [merchant, setMerchant] = useState(txn?.merchant ?? '')
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [targetId, setTargetId] = useState<string | null>(null)
   if (!txn) return null
 
   const account = state.accounts.find((a) => a.id === txn.accountId)
-  const bucket = state.buckets.find((b) => b.id === txn.bucketId)
+  const bucket = findBucket(state, txn.bucketId)
   const isCardAccount = account?.kind === 'card'
   const choices = state.buckets.filter((b) => b.type !== 'surplus' || b.isBuffer)
   const status =
     txn.status === 'applied' ? (bucket?.name ?? 'Applied') : txn.status === 'inbox' ? 'In Inbox' : txn.status === 'transfer' ? 'Transfer' : 'Ignored'
 
-  const move = (bucketId: string) => {
-    if (bucketId === txn.bucketId) return
-    recategorise(txn.id, bucketId)
-    toast(`Moved to ${state.buckets.find((b) => b.id === bucketId)?.name}`)
+  const target = state.buckets.find((b) => b.id === targetId && b.id !== txn.bucketId)
+  const transfer = () => {
+    if (!target) return
+    recategorise(txn.id, target.id)
+    toast(`Transferred to ${target.name}`)
+    setTargetId(null)
   }
 
   const saveEdit = () => {
@@ -59,12 +63,28 @@ export function TransactionSheet({ txnId, onClose }: { txnId: string; onClose: (
           <Eyebrow>{txn.status === 'applied' ? 'Move to another bucket' : 'Put in a bucket'}</Eyebrow>
           {isCardAccount && <p className="muted">Card spend: the category pays and the money is held in the card reserve.</p>}
           <div className="chips">
-            {choices.map((b) => (
-              <button key={b.id} className={`chip ${b.id === txn.bucketId ? 'is-active' : ''}`} onClick={() => move(b.id)}>
-                {b.name}
-              </button>
-            ))}
+            {choices.map((b) => {
+              const isCurrent = b.id === txn.bucketId
+              const isPicked = b.id === targetId
+              return (
+                <button
+                  key={b.id}
+                  className={`chip ${isPicked ? 'is-active' : isCurrent ? 'is-current' : ''}`}
+                  aria-pressed={isPicked}
+                  disabled={isCurrent}
+                  onClick={() => setTargetId(isPicked ? null : b.id)}
+                >
+                  {b.name}
+                  {isCurrent ? ' · now' : ''}
+                </button>
+              )
+            })}
           </div>
+          {target && (
+            <button className="button button--ink button--block" onClick={transfer}>
+              Transfer to {target.name}
+            </button>
+          )}
         </>
       )}
 

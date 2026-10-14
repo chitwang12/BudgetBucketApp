@@ -15,9 +15,9 @@ import { Inbox } from './screens/Inbox.tsx'
 import { Insights } from './screens/Insights.tsx'
 import { Plan } from './screens/Plan.tsx'
 import { Settings } from './screens/Settings.tsx'
-import { SimulateSmsSheet } from './screens/SimulateSmsSheet.tsx'
 import { Timeline } from './screens/Timeline.tsx'
 import { TransactionSheet } from './screens/TransactionSheet.tsx'
+import { Welcome } from './screens/Welcome.tsx'
 
 const TABS: { route: Route; label: string; icon: ReactNode }[] = [
   { route: '/', label: 'Home', icon: <HomeIcon /> },
@@ -36,11 +36,10 @@ const TAB_FOR: Partial<Record<Route, Route>> = {
 
 function Shell() {
   const route = useRoute()
-  const { state } = useStore()
+  const { state, sync } = useStore()
   const [bucketId, setBucketId] = useState<string | null>(null)
   const [txnId, setTxnId] = useState<string | null>(null)
   const [adding, setAdding] = useState<{ bucketId: string | null } | null>(null)
-  const [simulating, setSimulating] = useState(false)
   const [toast, setToast] = useState<string | null>(null)
   const clearToast = useCallback(() => setToast(null), [])
   const inboxCount = inboxItems(state).length
@@ -60,6 +59,15 @@ function Shell() {
     [],
   )
 
+  if (!sync.connected) {
+    return (
+      <main className="app">
+        <Welcome onToast={setToast} />
+        <Toast message={toast} onDone={clearToast} />
+      </main>
+    )
+  }
+
   return (
     <SheetsContext.Provider value={sheets}>
       <main className="app">
@@ -69,7 +77,7 @@ function Shell() {
         {route === '/inbox' && <Inbox />}
         {route === '/plan' && <Plan />}
         {route === '/plan/allocate' && <Allocate onDone={setToast} />}
-        {route === '/settings' && <Settings onSimulate={() => setSimulating(true)} onToast={setToast} />}
+        {route === '/settings' && <Settings onToast={setToast} />}
         {route === '/accounts' && <Accounts />}
         {route === '/activity' && <Activity />}
       </main>
@@ -102,7 +110,6 @@ function Shell() {
       {bucketId && <BucketSheet key={bucketId} bucketId={bucketId} onClose={() => setBucketId(null)} />}
       {txnId && <TransactionSheet key={txnId} txnId={txnId} onClose={() => setTxnId(null)} />}
       {adding && <AddTransactionSheet key={adding.bucketId ?? 'new'} open initialBucketId={adding.bucketId} onClose={() => setAdding(null)} />}
-      <SimulateSmsSheet open={simulating} onClose={() => setSimulating(false)} onResult={setToast} />
       <Toast message={toast} onDone={clearToast} />
     </SheetsContext.Provider>
   )

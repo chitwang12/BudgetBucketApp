@@ -3,6 +3,7 @@ import { BackIcon } from '../components/Icons.tsx'
 import { Eyebrow, Money } from '../components/ui.tsx'
 import { dateInZone, sum } from '../core/index.ts'
 import { allCycles } from '../data/analytics.ts'
+import { findBucket } from '../data/operations.ts'
 import { formatShortDate } from '../data/selectors.ts'
 import { useStore } from '../data/store.tsx'
 import { navigate } from '../lib/router.ts'
@@ -30,7 +31,7 @@ export function Activity() {
         if (filter === 'ignored' && t.status !== 'ignored') return false
         if (filter === 'all' && t.status === 'ignored') return false
         if (!q) return true
-        const bucket = state.buckets.find((b) => b.id === t.bucketId)?.name ?? ''
+        const bucket = findBucket(state, t.bucketId)?.name ?? ''
         return t.merchant.toLowerCase().includes(q) || bucket.toLowerCase().includes(q)
       })
       .sort((a, b) => Date.parse(b.occurredAt) - Date.parse(a.occurredAt))

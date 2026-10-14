@@ -42,7 +42,12 @@ export function AddTransactionSheet({ open, initialBucketId, onClose }: { open: 
           .filter((b) => b.type !== 'surplus' || b.isBuffer)
           .sort((a, b) => Number(b.type === 'flexible') - Number(a.type === 'flexible'))
           .map((b) => (
-            <button key={b.id} className={`chip ${bucketId === b.id ? 'is-active' : ''}`} onClick={() => setBucketId(b.id)}>
+            <button
+              key={b.id}
+              className={`chip ${bucketId === b.id ? 'is-active' : ''}`}
+              aria-pressed={bucketId === b.id}
+              onClick={() => setBucketId(bucketId === b.id ? null : b.id)}
+            >
               {b.name}
             </button>
           ))}
@@ -51,7 +56,12 @@ export function AddTransactionSheet({ open, initialBucketId, onClose }: { open: 
       <Eyebrow>Paid from</Eyebrow>
       <div className="chips">
         {activeAccounts.map((a) => (
-          <button key={a.id} className={`chip ${accountId === a.id ? 'is-active' : ''}`} onClick={() => setAccountId(a.id)}>
+          <button
+            key={a.id}
+            className={`chip ${accountId === a.id ? 'is-active' : ''}`}
+            aria-pressed={accountId === a.id}
+            onClick={() => setAccountId(accountId === a.id ? null : a.id)}
+          >
             {a.name}
           </button>
         ))}

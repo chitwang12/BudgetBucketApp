@@ -4,6 +4,7 @@ import { Bar, Eyebrow, Money, PageHeader, Pill, Segmented } from '../components/
 import { formatINR, type Paise } from '../core/index.ts'
 import {
   buildReports,
+  everyBucket,
   insights,
   merchantStats,
   pace,
@@ -65,10 +66,7 @@ export function Insights() {
   }))
   const leftAverage = average(inRange.map((r) => r.leftOver))
 
-  return (
-    <div className="screen">
-      <PageHeader eyebrow={`${closed.length} closed cycles`} title="Insights" />
-
+  const paceCard = (
       <section className="pace-card">
         <Eyebrow>
           This cycle · day {current.elapsed} of {current.length}
@@ -94,6 +92,30 @@ export function Insights() {
           </span>
         </div>
       </section>
+  )
+
+  if (closed.length === 0) {
+    return (
+      <div className="screen">
+        <PageHeader eyebrow="Getting started" title="Insights" />
+        {current.cycle.income > 0 && paceCard}
+        <section className="card settings-block">
+          <p className="settings-row__title">Patterns need a little history</p>
+          <p className="activity__meta">
+            {current.cycle.income > 0
+              ? 'Month-by-month trends, top merchants and plan vs actual appear once this cycle closes on your next salary day.'
+              : 'Start your first salary day from the Plan tab. Your spending pace shows here straight away, and trends follow after a month.'}
+          </p>
+        </section>
+      </div>
+    )
+  }
+
+  return (
+    <div className="screen">
+      <PageHeader eyebrow={`${closed.length} closed cycles`} title="Insights" />
+
+      {paceCard}
 
       <section className="group">
         <header className="group__header">
@@ -240,7 +262,7 @@ export function Insights() {
 
 function CycleDetail({ report }: { report: CycleReport }) {
   const { state } = useStore()
-  const rows = state.buckets
+  const rows = everyBucket(state)
     .filter((b) => spendGroupOf(b) !== null)
     .map((bucket) => ({ bucket, spent: report.spentByBucket.get(bucket.id) ?? 0, funded: report.fundedByBucket.get(bucket.id) ?? 0 }))
     .filter((row) => row.spent !== 0 || row.funded !== 0)
@@ -300,7 +322,9 @@ const DOT_LABEL: Record<PaymentRecord['status'], string> = { on_time: 'On time',
 
 function CommitmentGrid({ reports }: { reports: CycleReport[] }) {
   const { state } = useStore()
-  const committed = state.buckets.filter((b) => b.type === 'committed' && b.dueWindow)
+  const committed = everyBucket(state).filter(
+    (b) => b.type === 'committed' && b.dueWindow && (state.buckets.includes(b) || reports.some((r) => r.payments.some((p) => p.bucketId === b.id))),
+  )
   return (
     <div className="card commit-grid" style={{ '--cols': reports.length } as CSSProperties}>
       <div className="commit-grid__row commit-grid__head">
