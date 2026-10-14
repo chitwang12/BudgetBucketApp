@@ -113,7 +113,12 @@ function entriesFor(state: AppState, txn: Transaction, bucketId: string): Ledger
   const bucket = bucketById(state, bucketId)
   const card = cardBucketForAccount(state, txn.accountId)
 
-  if (txn.direction === 'credit') return [{ bucketId, amount: txn.amount, kind: 'refund', transactionId: txn.id }]
+  if (txn.direction === 'credit') {
+    // A refund on a card returns the money that was set aside for its bill.
+    if (card && bucket.id === card.id) return []
+    const refund: LedgerEntryDraft = { bucketId, amount: txn.amount, kind: 'refund', transactionId: txn.id }
+    return card ? [refund, { bucketId: card.id, amount: -txn.amount, kind: 'refund', transactionId: txn.id }] : [refund]
+  }
   if (card && bucket.id === card.id) return []
   if (card) return planCardSwipe({ categoryBucketId: bucketId, cardBucketId: card.id, amount: txn.amount, transactionId: txn.id })
   if (bucket.type === 'card') return planCardPayment(bucket.id, txn.amount, txn.id)
@@ -182,6 +187,18 @@ export function assignTransaction(state: AppState, txnId: string, bucketId: stri
     }
   }
   return next
+}
+
+/** The newest credit waiting for salary day, if any. */
+export function pendingSalary(state: AppState): Transaction | undefined {
+  return state.transactions.find((t) => t.salary === 'pending')
+}
+
+/** "Not my salary": the credit goes to the Inbox like any other money received. */
+export function dismissSalary(state: AppState, txnId: string): AppState {
+  const txn = state.transactions.find((t) => t.id === txnId)
+  if (!txn || txn.salary !== 'pending') return state
+  return withTransaction(state, { ...txn, salary: undefined, status: 'inbox', suggestedBucketId: bufferBucket(state)?.id ?? null })
 }
 
 export function setTransactionStatus(state: AppState, txnId: string, status: 'ignored' | 'transfer'): AppState {
@@ -479,7 +496,10 @@ export function startCycle(state: AppState, salaryDate: IsoDate, income: Paise, 
       : b,
   )
   const history = placeholder ? state.history : [...state.history, closed]
-  const next: AppState = { ...state, buckets, cycle, history, billed: {} }
+  const transactions = state.transactions.some((t) => t.salary === 'pending')
+    ? state.transactions.map((t) => (t.salary === 'pending' ? { ...t, salary: 'used' as const } : t))
+    : state.transactions
+  const next: AppState = { ...state, buckets, cycle, history, transactions, billed: {} }
   return { ...next, ledger: [...ledger, ...toLedger(next, allocationEntries, now, cycle.id)] }
 }
 
@@ -508,6 +528,7 @@ export type IngestOutcome =
   | { kind: 'billed'; bucketName: string; amount: Paise }
   | { kind: 'applied'; bucketName: string; amount: Paise; merchant: string }
   | { kind: 'transfer'; amount: Paise }
+  | { kind: 'salary'; amount: Paise }
   | { kind: 'inbox'; amount: Paise; merchant: string; suggestion: string | null }
 
 export function describeOutcome(outcome: IngestOutcome): string {
@@ -522,12 +543,52 @@ export function describeOutcome(outcome: IngestOutcome): string {
       return `${formatINR(outcome.amount)} ${outcome.merchant} → ${outcome.bucketName}`
     case 'transfer':
       return `${formatINR(outcome.amount)} recorded as a transfer`
+    case 'salary':
+      return `${formatINR(outcome.amount)} salary received · open the app to start salary day`
     case 'inbox':
       return `${formatINR(outcome.amount)} ${outcome.merchant} sent to Inbox${outcome.suggestion ? ` (maybe ${outcome.suggestion})` : ''}`
   }
 }
 
 const CARD_BILL_PAYMENT = /\b(credit card|cc payment|card bill|card payment)\b/i
+const CARD_PAYMENT_RECEIVED = /\b(?:payment|pymt|pmt)\b.{0,60}?\b(?:received|credited|successful|posted)\b|thank you for (?:your |the )?payment/i
+const SALARY = /\b(?:salary|sal)\b/i
+const TRANSFER_WINDOW_MS = 3 * 24 * 60 * 60 * 1000
+
+/**
+ * Money moving between two of your own accounts arrives as a debit on one and a credit of the same
+ * amount on the other. Only unsorted transactions on two different known bank accounts are paired.
+ */
+function ownTransferPair(state: AppState, txn: Transaction): Transaction | undefined {
+  const account = state.accounts.find((a) => a.id === txn.accountId)
+  if (!account || account.kind === 'card') return undefined
+  const at = Date.parse(txn.occurredAt)
+  return state.transactions.find((other) => {
+    if (other.id === txn.id || other.status !== 'inbox' || other.amount !== txn.amount || other.direction === txn.direction) return false
+    if (!other.accountId || other.accountId === txn.accountId) return false
+    const otherAccount = state.accounts.find((a) => a.id === other.accountId)
+    return otherAccount !== undefined && otherAccount.kind !== 'card' && Math.abs(Date.parse(other.occurredAt) - at) <= TRANSFER_WINDOW_MS
+  })
+}
+
+/** Says "salary", or is close to the last salary; with no salary yet, a large bank transfer in. */
+function looksLikeSalary(state: AppState, text: string, amount: Paise): boolean {
+  if (SALARY.test(text)) return true
+  const last = state.cycle.income || state.history.at(-1)?.income || 0
+  if (last > 0) return amount >= last * 0.7 && amount <= last * 1.5
+  return amount >= 1_500_000 && /\b(?:neft|rtgs|imps)\b/i.test(text)
+}
+
+/** Where the last payment to this merchant went, so a refund goes back to the same bucket. */
+function lastBucketFor(state: AppState, txn: Transaction): string | null {
+  const name = normaliseMerchant(txn.merchant)
+  if (!name || txn.merchant === 'Unknown') return null
+  const spendBucket = (id: string | null) => state.buckets.some((b) => b.id === id && b.type !== 'card')
+  const earlier = state.transactions.find(
+    (t) => t.id !== txn.id && t.direction === 'debit' && t.status === 'applied' && spendBucket(t.bucketId) && normaliseMerchant(t.merchant) === name,
+  )
+  return earlier?.bucketId ?? null
+}
 
 /** The same steps the server will run: dedupe, parse, then committed match, card payment, rules, inbox. */
 export function ingestSms(
@@ -572,10 +633,32 @@ export function ingestSms(
   next = withTransaction(next, txn)
 
   const isCardAccount = account?.kind === 'card'
-  if (parsed.direction === 'credit' && isCardAccount) {
-    return { state: setTransactionStatus(next, txn.id, 'transfer'), outcome: { kind: 'transfer', amount: txn.amount } }
+
+  const pair = ownTransferPair(next, txn)
+  if (pair) {
+    next = setTransactionStatus(setTransactionStatus(next, pair.id, 'transfer'), txn.id, 'transfer')
+    return { state: next, outcome: { kind: 'transfer', amount: txn.amount } }
   }
-  if (parsed.direction === 'debit' && !isCardAccount && CARD_BILL_PAYMENT.test(text)) {
+
+  if (parsed.direction === 'credit') {
+    if (isCardAccount && CARD_PAYMENT_RECEIVED.test(text)) {
+      return { state: setTransactionStatus(next, txn.id, 'transfer'), outcome: { kind: 'transfer', amount: txn.amount } }
+    }
+    if (!isCardAccount && looksLikeSalary(next, text, txn.amount)) {
+      next = withTransaction(next, { ...txn, status: 'transfer', salary: 'pending' })
+      return { state: next, outcome: { kind: 'salary', amount: txn.amount } }
+    }
+    const refundTo = matchRule(next.rules, merchant)?.bucketId ?? lastBucketFor(next, txn)
+    if (refundTo && next.buckets.some((b) => b.id === refundTo)) {
+      next = assignTransaction(next, txn.id, refundTo)
+      return { state: next, outcome: { kind: 'applied', bucketName: bucketById(next, refundTo).name, amount: txn.amount, merchant } }
+    }
+    const buffer = bufferBucket(next)
+    if (buffer) next = withTransaction(next, { ...txn, suggestedBucketId: buffer.id, confidence: null })
+    return { state: next, outcome: { kind: 'inbox', amount: txn.amount, merchant, suggestion: buffer?.name ?? null } }
+  }
+
+  if (!isCardAccount && CARD_BILL_PAYMENT.test(text)) {
     const card = next.buckets.find((b) => b.type === 'card')
     if (card) {
       next = assignTransaction(next, txn.id, card.id)

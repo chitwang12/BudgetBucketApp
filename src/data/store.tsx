@@ -89,6 +89,7 @@ interface Store {
   editTransaction: (txnId: string, patch: { amount?: Paise; merchant?: string }) => void
   returnToInbox: (txnId: string) => void
   deleteTransaction: (txnId: string) => void
+  dismissSalary: (txnId: string) => void
   moveMoney: (fromId: string, toId: string, amount: Paise) => void
   undoMove: (moveId: string) => void
   addAccount: (input: NewAccount) => void
@@ -297,6 +298,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       editTransaction: (txnId, patch) => dispatch({ type: 'editTransaction', txnId, patch }),
       returnToInbox: (txnId) => dispatch({ type: 'returnToInbox', txnId }),
       deleteTransaction: (txnId) => dispatch({ type: 'deleteTransaction', txnId }),
+      dismissSalary: (txnId) => dispatch({ type: 'dismissSalary', txnId }),
       moveMoney: (fromId, toId, amount) => dispatch({ type: 'moveMoney', fromId, toId, amount }),
       undoMove: (moveId) => dispatch({ type: 'undoMove', moveId }),
       addAccount: (input) => dispatch({ type: 'addAccount', input }),

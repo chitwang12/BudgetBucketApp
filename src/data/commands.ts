@@ -7,6 +7,7 @@ import {
   assignTransaction,
   coverOverspend,
   deleteTransaction,
+  dismissSalary,
   editTransaction,
   ingestSms,
   markPaid,
@@ -50,6 +51,7 @@ export type CommandBody =
   | { type: 'editTransaction'; txnId: string; patch: { amount?: Paise; merchant?: string } }
   | { type: 'returnToInbox'; txnId: string }
   | { type: 'deleteTransaction'; txnId: string }
+  | { type: 'dismissSalary'; txnId: string }
   | { type: 'moveMoney'; fromId: string; toId: string; amount: Paise }
   | { type: 'undoMove'; moveId: string }
   | { type: 'addAccount'; input: NewAccount }
@@ -111,6 +113,8 @@ function run(state: AppState, command: Command): Applied {
       return { state: returnToInbox(state, command.txnId) }
     case 'deleteTransaction':
       return { state: deleteTransaction(state, command.txnId) }
+    case 'dismissSalary':
+      return { state: dismissSalary(state, command.txnId) }
     case 'moveMoney':
       return { state: moveMoney(state, command.fromId, command.toId, command.amount, at) }
     case 'undoMove':

@@ -13,7 +13,7 @@ import {
   viewGroups,
   type GroupView,
 } from '../data/selectors.ts'
-import { findBucket } from '../data/operations.ts'
+import { findBucket, pendingSalary } from '../data/operations.ts'
 import { useStore } from '../data/store.tsx'
 import type { AppState, Transaction } from '../data/types.ts'
 import { navigate } from '../lib/router.ts'
@@ -61,8 +61,9 @@ export function ActivityRow({ txn }: { txn: Transaction }) {
 }
 
 export function Home() {
-  const { state, today } = useStore()
+  const { state, today, dismissSalary } = useStore()
   const { openBucket } = useSheets()
+  const salary = pendingSalary(state)
   const safe = safeToSpendView(state, today)
   const groups = viewGroups(state, today)
   const { day, length } = cycleDay(state, today)
@@ -86,6 +87,21 @@ export function Home() {
           </button>
         </span>
       </div>
+
+      {salary && (
+        <section className="salary-landed">
+          <button className="cta" onClick={() => navigate('/plan/allocate')}>
+            <span>
+              <span className="eyebrow">Salary landed · {formatINR(salary.amount)}</span>
+              <span className="display display--md">Start salary day</span>
+            </span>
+            <ArrowIcon />
+          </button>
+          <button className="link" onClick={() => dismissSalary(salary.id)}>
+            Not my salary · send to Inbox
+          </button>
+        </section>
+      )}
 
       {settingUp && (
         <section className="card setup">

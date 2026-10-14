@@ -40,6 +40,10 @@ describe('parseSms: SBI and credit cards', () => {
     it(`reads ${name}`, () => expect(parseSms(text)).toMatchObject({ kind: 'transaction', ...expected }))
   }
 
+  it('drops the full stop after a UPI id', () => {
+    expect(parseSms('Rs 2,000.00 credited to A/c XX1234 from VPA rahul.k@okaxis. UPI Ref 1')).toMatchObject({ merchantRaw: 'rahul.k@okaxis' })
+  })
+
   it('keeps merchants whose names start like "account"', () => {
     expect(parseSms('Rs 499 debited from A/c XX4321 to ACT FIBERNET on 14-10-26')).toMatchObject({ merchantRaw: 'ACT FIBERNET' })
   })

@@ -3,7 +3,7 @@ import { BackIcon } from '../components/Icons.tsx'
 import { MoneyInput } from '../components/MoneyInput.tsx'
 import { Eyebrow, Money } from '../components/ui.tsx'
 import { cycleForSalaryDate, draftAllocation, rupees, unallocated, type AllocationLine, type Paise } from '../core/index.ts'
-import { balanceOfBucket } from '../data/operations.ts'
+import { balanceOfBucket, pendingSalary } from '../data/operations.ts'
 import { formatShortDate } from '../data/selectors.ts'
 import { useStore } from '../data/store.tsx'
 import { navigate } from '../lib/router.ts'
@@ -20,8 +20,9 @@ export function Allocate({ onDone }: { onDone: (message: string) => void }) {
     [state, nextCycle.start],
   )
 
-  const [income, setIncome] = useState<Paise>(rupees(50_000))
-  const [lines, setLines] = useState<AllocationLine[]>(() => draftAllocation(rupees(50_000), state.buckets, context))
+  const [startIncome] = useState(() => pendingSalary(state)?.amount ?? (state.cycle.income || rupees(50_000)))
+  const [income, setIncome] = useState<Paise>(startIncome)
+  const [lines, setLines] = useState<AllocationLine[]>(() => draftAllocation(startIncome, state.buckets, context))
   const left = unallocated(income, lines)
   const buffer = state.buckets.find((b) => b.isBuffer)
 

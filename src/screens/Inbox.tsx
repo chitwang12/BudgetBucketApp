@@ -26,8 +26,10 @@ export function Inbox() {
 
 function InboxCard({ txn }: { txn: Transaction }) {
   const { state, assign, ignore, markTransfer } = useStore()
-  const [remember, setRemember] = useState(true)
-  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const isCredit = txn.direction === 'credit'
+  // A rule learned from money received would also catch payments to that person.
+  const [remember, setRemember] = useState(!isCredit)
+  const [selectedId, setSelectedId] = useState<string | null>(isCredit ? txn.suggestedBucketId : null)
   const account = state.accounts.find((a) => a.id === txn.accountId)
   const suggestion = state.buckets.find((b) => b.id === txn.suggestedBucketId)
   const selected = state.buckets.find((b) => b.id === selectedId)
@@ -58,8 +60,16 @@ function InboxCard({ txn }: { txn: Transaction }) {
 
       {suggestion && (
         <p className="suggestion">
-          Looks like <strong>{suggestion.name}</strong>
-          {txn.confidence !== null && <span> · {Math.round(txn.confidence * 100)}% sure</span>}
+          {isCredit ? (
+            <>
+              Money received · add it to <strong>{suggestion.name}</strong>, or pick the bucket it pays back
+            </>
+          ) : (
+            <>
+              Looks like <strong>{suggestion.name}</strong>
+              {txn.confidence !== null && <span> · {Math.round(txn.confidence * 100)}% sure</span>}
+            </>
+          )}
         </p>
       )}
 
@@ -77,7 +87,7 @@ function InboxCard({ txn }: { txn: Transaction }) {
       </div>
 
       <button className="button button--ink button--block" disabled={!selected} onClick={transfer}>
-        {selected ? `Transfer to ${selected.name}` : 'Pick a bucket'}
+        {selected ? `${isCredit ? 'Add to' : 'Transfer to'} ${selected.name}` : 'Pick a bucket'}
       </button>
 
       <footer className="inbox-card__footer">

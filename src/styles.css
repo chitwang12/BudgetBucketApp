@@ -1454,6 +1454,13 @@ p {
   color: var(--ink-3);
 }
 
+.salary-landed {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
 .setup {
   display: grid;
   gap: 6px;

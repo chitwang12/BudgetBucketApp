@@ -66,6 +66,8 @@ export interface Transaction {
   bucketId: string | null
   suggestedBucketId: string | null
   confidence: number | null
+  /** A credit that looks like salary: waits for salary day, then is marked used. */
+  salary?: 'pending' | 'used'
 }
 
 export interface Rule {

@@ -26,11 +26,11 @@ const CREDIT = /\b(credited|received|deposited|refund(?:ed)?|reversed|reversal|a
 const LAST4 = /(?:a\/c|acct|account|card)\s*(?:no\.?\s*)?(?:ending\s*(?:with\s*|in\s*)?)?[x*•]*\s*(\d{4})\b/i
 
 const MERCHANT_PATTERNS = [
-  /\b(?:vpa|upi id)\s+([\w.-]+@[\w.-]+)/i,
-  /\b(?:to|at|towards|trf to)\s+(?:vpa\s+)?([A-Za-z0-9@&'._ -]{2,40}?)(?=\s+(?:on|ref|refno|upi|via|avl|not|dated|from|is|by)\b|[.,;:]|\s*$)/i,
+  /\b(?:vpa|upi id)\s+([\w.-]+@[\w-]+(?:\.[\w-]+)*)/i,
+  /\b(?:to|at|towards|trf to)\s+(?:vpa\s+)?([A-Za-z0-9@&'._ -]{2,40}?)(?=\s+(?:on|ref|refno|upi|via|avl|not|dated|from|is|by|credited|debited)\b|[.,;:]|\s*$)/i,
   /\bon\s+([A-Z][A-Z0-9&'._ -]{2,40}?)(?=[.,;]|\s+(?:avl|ref)\b|\s*$)/,
   /\bIST\s+([A-Z][A-Z0-9&'._ -]{2,40}?)(?=\s+avl\b)/i,
-  /\bfrom\s+(?:vpa\s+)?([A-Za-z0-9@&'._ -]{2,40}?)(?=\s+(?:on|ref|refno|upi|via|avl)\b|[.,;:]|\s*$)/i,
+  /\bfrom\s+(?:vpa\s+)?([A-Za-z0-9@&'._ -]{2,40}?)(?=\s+(?:on|ref|refno|upi|via|avl|credited|debited|as)\b|[.,;:]|\s*$)/i,
   /\bby\s+(?!(?:neft|imps|rtgs|upi|you)\b)([A-Za-z][A-Za-z0-9&'._ -]{2,40}?)(?=\s+(?:on|ref|avl)\b|[.,;]|\s*$)/i,
 ]
 
@@ -56,7 +56,8 @@ function merchant(text: string): string | null {
   for (const pattern of MERCHANT_PATTERNS) {
     const match = pattern.exec(text)
     const name = match?.[1]?.replace(/\s+/g, ' ').trim()
-    if (name && !/^(?:(?:your|a\/c|ac|account|card)\b|x{2,})/i.test(name)) return name
+    // Skip your own account or card ("ICICI Bank Card XX9876"), which banks also write after "to".
+    if (name && !/^(?:(?:your|a\/c|ac|account|card)\b|x{2,})|\b(?:a\/c|acct|account|card)\b/i.test(name)) return name
   }
   return null
 }
